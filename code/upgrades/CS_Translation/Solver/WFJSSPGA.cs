@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -177,8 +178,130 @@ namespace Solver
             }
         }
 
+        class TimeSlot
+        {
+            public int Start = 0;
+            public int End = 0;
+
+            public TimeSlot(int start, int end)
+            {
+                Start = start;
+                End = end;
+            }
+            public bool Overlaps(TimeSlot other)
+            {
+                return Contains(other.Start) || Contains(other.End) || other.Contains(Start) || other.Contains(End);
+            }
+
+            public bool Contains(int time)
+            {
+                return time >= Start && time <= End;
+            }
+        }
+
+        private TimeSlot EarliestFit(List<TimeSlot> slots, TimeSlot slot)
+        {
+            for(int i = 1; i < slots.Count; ++i) 
+            {
+                if (slots[i-1].End <= slot.Start && slots[i].Start >= slot.End)
+                {
+                    return slots[i - 1];
+                }
+            }
+            return slots.Last();
+        }
+
+        private void EvaluateSlots(WFJSSPIndividual nIndividual)
+        {
+            
+            WFJSSPIndividual individual = (WFJSSPIndividual)nIndividual;
+            // TODO: test
+            if (!individual.Feasible)
+            {
+                individual.Fitness[Criteria.Makespan] = float.MaxValue;
+                return;
+            }
+            int[] nextOperation = new int[_configuration.NJobs];
+            List<TimeSlot>[] endOnMachines = new List<TimeSlot>[_configuration.NMachines];
+            for(int i = 0; i < endOnMachines.Length; ++i)
+            {
+                endOnMachines[i] = new List<TimeSlot>();
+                endOnMachines[i].Add(new TimeSlot(0, 0));
+            }
+            List<TimeSlot>[] endOfWorkers = new List<TimeSlot>[_workerDurations.GetLength(2)];
+            for (int i = 0; i < endOfWorkers.Length; ++i)
+            {
+                endOfWorkers[i] = new List<TimeSlot>();
+                endOfWorkers[i].Add(new TimeSlot(0, 0));
+            }
+            //int[] endOnMachines = new int[_configuration.NMachines];
+            // TODO: need to keep record of worker times in a different format
+            //int[] endOfWorkers = new int[_workerDurations.GetLength(2)];
+            int[] endTimes = new int[_configuration.JobSequence.Length];
+            for (int i = 0; i < individual.Sequence.Length; ++i)
+            {
+                int job = individual.Sequence[i];
+                int operation = nextOperation[job];
+                ++nextOperation[job];
+                int startIndex = _configuration.JobStartIndices[job] + operation;
+                int machine = individual.Assignments[startIndex];
+
+                int worker = individual.Workers[startIndex];
+
+                int duration = _workerDurations[startIndex, machine, worker];
+                if(duration == 0)
+                {
+                    Console.WriteLine("0 DURATION, INVALID ASSIGNMENT!");
+                }
+                int offset = 0;
+                int minStartJob = 0;
+                if (operation > 0)
+                {
+                    if (endTimes[startIndex - 1] > offset)
+                    {
+                        // need to wait for previous operation to finish
+                        offset = endTimes[startIndex - 1];
+                    }
+                }
+                if (endOnMachines[machine].Count > 0 && endOnMachines[machine].Last().End >= offset)
+                {
+                    // need to wait for machine to be available
+                    // TODO: could check for earlier timeslot here, but complicated with worker 
+                    offset = endOnMachines[machine].Last().End;
+                }
+                // TODO: don't check if the worker is finished, check if the worker is free in the timespan instead
+                // (could be on other machine at a later time already)
+                if (endOfWorkers[worker].Count > 0)
+                {
+                    TimeSlot workerEarliest = EarliestFit(endOfWorkers[worker], new TimeSlot(offset, offset + duration));
+                    if (workerEarliest.End >= offset)
+                    //if (endOfWorkers[worker].Last().End >= offset)
+                    {
+                        // need to wait for worker to be ready
+                        //offset = endOfWorkers[worker].Last().End;
+                        offset = workerEarliest.End;
+                    }
+                }
+
+                //offset = Math.Max(Math.Max(0, endTimes[startIndex - 1] - endOnMachines[machine]), endTimes[startIndex - 1] - endOfWorkers[worker]);
+                //minStartJob = endTimes[startIndex - 1];
+                //}
+                endTimes[startIndex] = offset + duration;
+                //endTimes[startIndex] = Math.Max(endOnMachines[machine], endOfWorkers[worker]) + duration + offset;
+                endOnMachines[machine].Add(new TimeSlot(offset, offset + duration));
+                endOfWorkers[worker].Add(new TimeSlot(offset, offset + duration));
+                //endOnMachines[machine] = endTimes[startIndex];
+                //endOfWorkers[worker] = endTimes[startIndex];
+            }
+            individual.Fitness[Criteria.Makespan] = endTimes.Max();
+            _functionEvaluations++;
+        }
+
         private void Evaluate(WFJSSPIndividual nIndividual)
         {
+            // just redirect for now
+            EvaluateSlots(nIndividual);
+            /*
             WFJSSPIndividual individual = (WFJSSPIndividual)nIndividual;
             // TODO: test
             if (!individual.Feasible)
@@ -194,7 +317,8 @@ namespace Solver
             for (int i = 0; i < individual.Sequence.Length; ++i)
             {
                 int job = individual.Sequence[i];
-                int operation = nextOperation[job]++;
+                int operation = nextOperation[job];
+                ++nextOperation[job];
                 int startIndex = _configuration.JobStartIndices[job] + operation;
                 int machine = individual.Assignments[startIndex];
 
@@ -233,7 +357,7 @@ namespace Solver
                 endOfWorkers[worker] = endTimes[startIndex];
             }
             individual.Fitness[Criteria.Makespan] = endTimes.Max();
-            _functionEvaluations++;
+            _functionEvaluations++;*/
         }
 
 
@@ -375,7 +499,7 @@ namespace Solver
                         int swap;
                         do
                         {
-                            swap = Individual.AvailableMachines[i][_random.Next(WFJSSPIndividual.AvailableMachines[i].Count)];
+                            swap = WFJSSPIndividual.AvailableMachines[i][_random.Next(WFJSSPIndividual.AvailableMachines[i].Count)];
                         } while (swap != individual.Assignments[i]);
                         individual.Assignments[i] = swap;
                     }
@@ -467,7 +591,7 @@ namespace Solver
             Console.ResetColor();
         }
 
-        public WorkerHistory Run(int maxGeneration, int timeLimit, float targetFitness, int maxFunctionEvaluations)
+        public WorkerHistory Run(int maxGeneration, int timeLimit, float targetFitness, int maxFunctionEvaluations, bool keepMultiple, bool doLocalSearch)
         {
             CreatePopulation(_configuration.PopulationSize);
             List<WFJSSPIndividual> offspring = new List<WFJSSPIndividual>();
@@ -487,6 +611,8 @@ namespace Solver
             _functionEvaluations = 0;
             _startTime = DateTime.Now;
 
+            _output = false;
+
             WorkerHistory history = new WorkerHistory();
             bool improvement = false;
             bool match = false;
@@ -500,25 +626,36 @@ namespace Solver
                 }
                 if (mutationProbability > maxMutationProbability)
                 {
-                    //Note: local minimum
-                    /*Console.WriteLine("Local Search");
-                    Individual localMinimum = LocalSearch(currentBest);
-                    Console.WriteLine("Local Search Done");*/
-                    // only necessary if local search is conducted
                     WFJSSPIndividual localMinimum = currentBest[0];
+                    if (doLocalSearch)
+                    {
+                        //Note: local minimum
+                        //Console.WriteLine("Local Search");
+                        localMinimum = LocalSearch(currentBest);
+                        //Console.WriteLine("Local Search Done");
+                    }
+                    // only necessary if local search is conducted
                     if (localMinimum.Fitness[Criteria.Makespan] < overallBest[0].Fitness[Criteria.Makespan])
                     {
+                        overallBest.Clear(); // just never happened without local search
                         improvement = true;
-                        foreach (WFJSSPIndividual individual in currentBest)
+                        if (keepMultiple)
                         {
-                            if (!overallBest.Contains(individual))
+                            foreach (WFJSSPIndividual individual in currentBest)
                             {
-                                overallBest.Add(individual);
+                                if (individual.Fitness[Criteria.Makespan] == localMinimum.Fitness[Criteria.Makespan] && !overallBest.Contains(individual))
+                                {
+                                    overallBest.Add(individual);
+                                }
                             }
+                        }
+                        else
+                        {
+                            overallBest.Add(localMinimum);
                         }
                         //overallBest = currentBest;
                     }
-                    else if (localMinimum.Fitness[Criteria.Makespan] == overallBest[0].Fitness[Criteria.Makespan] && !overallBest.Contains(localMinimum))
+                    else if (keepMultiple && localMinimum.Fitness[Criteria.Makespan] == overallBest[0].Fitness[Criteria.Makespan] && !overallBest.Contains(localMinimum))
                     {
                         overallBest.Add(localMinimum);
                         match = true;
@@ -563,13 +700,27 @@ namespace Solver
 
                 if (currentBest.Count == 0 || _population[0].Fitness[Criteria.Makespan] < currentBest[0].Fitness[Criteria.Makespan])
                 {
-                    currentBest = GetAllEqual(_population[0], _population);
+                    if (keepMultiple)
+                    {
+                        currentBest = GetAllEqual(_population[0], _population);
+                    } else
+                    {
+                        currentBest.Clear();
+                        currentBest.Add(_population[0]);
+                    }
                     if (currentBest[0].Fitness[Criteria.Makespan] < overallBest[0].Fitness[Criteria.Makespan])
                     {
+                        overallBest.Clear();
                         improvement = true;
-                        overallBest = GetAllEqual(_population[0], _population); // just to not copy currentBest
+                        if (keepMultiple)
+                        {
+                            overallBest = GetAllEqual(_population[0], _population); // just to not copy currentBest
+                        } else
+                        {
+                            overallBest.Add(currentBest[0]);
+                        }
                     }
-                    else if (currentBest[0].Fitness[Criteria.Makespan] == overallBest[0].Fitness[Criteria.Makespan])
+                    else if (keepMultiple && currentBest[0].Fitness[Criteria.Makespan] == overallBest[0].Fitness[Criteria.Makespan])
                     {
                         match = true;
                         for (int i = 0; i < currentBest.Count; ++i)
@@ -582,7 +733,7 @@ namespace Solver
                     }
                     lastProgress = generation;
                 }
-                else if (_population[0].Fitness[Criteria.Makespan] == currentBest[0].Fitness[Criteria.Makespan])
+                else if (keepMultiple && _population[0].Fitness[Criteria.Makespan] == currentBest[0].Fitness[Criteria.Makespan])
                 {
                     List<WFJSSPIndividual> equals = GetAllEqual(_population[0], _population);
                     for (int i = 0; i < equals.Count; ++i)

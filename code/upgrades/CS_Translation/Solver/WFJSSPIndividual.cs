@@ -21,6 +21,7 @@ namespace Solver
         public static float MaxDissimilarity;
         public static int MaxInitializationAttemps = 100; // TODO add parameter
         public static float DistanceAdjustmentRate = 0.75f; // TODO add parameter
+        public static bool UseDissimilarity = true;
         public int[] Workers { get => _workers; set => _workers = value; }
 
         public Dictionary<Criteria, float> Fitness { get => _fitness; set => _fitness = value; }
@@ -53,7 +54,7 @@ namespace Solver
 
         public WFJSSPIndividual(List<WFJSSPIndividual> population) : this(true)
         {
-            if(population.Count < 1)
+            if(population.Count < 1 || !UseDissimilarity)
             {
                 Randomize();
             } else
@@ -254,7 +255,7 @@ namespace Solver
                     {
                         swap = random.Next(_sequence.Length);
                         ++attempts;
-                    } while (_sequence[swap] == _sequence[i]); // make sure it does not swap with itself
+                    } while (_sequence[swap] == _sequence[i] && attempts < 100); // make sure it does not swap with itself
                     int tmp = _sequence[swap];
                     _sequence[swap] = _sequence[i];
                     _sequence[i] = tmp;
@@ -265,12 +266,14 @@ namespace Solver
                     if (AvailableMachines[i].Count > 1)
                     {
                         int swap;
+                        int attempts = 0;
                         do
                         {
                             swap = random.Next(AvailableMachines[i].Count);
-                        } while (AvailableMachines[i][swap] == _assignments[i]);
+                            ++attempts;
+                        } while (AvailableMachines[i][swap] == _assignments[i] && attempts < 100);
                         _assignments[i] = AvailableMachines[i][swap];
-                        if (AvailableWorkers[i][_assignments[i]].Contains(_workers[i]))
+                        if (!AvailableWorkers[i][_assignments[i]].Contains(_workers[i]))
                         {
                             // no longer feasible - randomly choose new worker
                             _workers[i] = AvailableWorkers[i][_assignments[i]][random.Next(AvailableWorkers[i][_assignments[i]].Count)];
@@ -281,10 +284,12 @@ namespace Solver
                 {
                     if (AvailableWorkers[i][_assignments[i]].Count > 1){
                         int swap;
+                        int attempts = 0;
                         do
                         {
                             swap = random.Next(AvailableWorkers[i][_assignments[i]].Count);
-                        } while (AvailableWorkers[i][_assignments[i]][swap] == _workers[i]);
+                            ++attempts;
+                        } while (AvailableWorkers[i][_assignments[i]][swap] == _workers[i] && attempts < 100);
                         _workers[i] = AvailableWorkers[i][_assignments[i]][swap];
                     }
                 }

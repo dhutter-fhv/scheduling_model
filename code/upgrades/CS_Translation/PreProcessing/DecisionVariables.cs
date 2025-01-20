@@ -30,15 +30,19 @@ namespace BenchmarkParsing
                 int machineCount = 0;
                 for (int j = 0; j < encoding.Durations.GetLength(1); ++j)
                 {
-                    if (encoding.Durations[i, j, 0] > 0)
-                    {
-                        if (!uniqueDurations.Contains(encoding.Durations[i, j, 0]))
+                    // TODO: ?
+                    for (int k = 0; k < encoding.Durations.GetLength(2); ++k){
+
+                        if (encoding.Durations[i, j, k] > 0)
                         {
-                            uniqueDurations.Add(encoding.Durations[i, j, 0]);
+                            if (!uniqueDurations.Contains(encoding.Durations[i, j, k]))
+                            {
+                                uniqueDurations.Add(encoding.Durations[i, j, k]);
+                            }
+                            ++onMachines[j];
+                            ++overallOptions;
+                            ++machineCount;
                         }
-                        ++onMachines[j];
-                        ++overallOptions;
-                        ++machineCount;
                     }
                 }
                 _averageMachines += machineCount;
